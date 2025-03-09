@@ -1,4 +1,4 @@
-Flask==2.2.2
+Flask==2.3.3
 Flask-Cors==3.0.10
 joblib==1.3.2
 matplotlib==3.7.1
@@ -9,4 +9,3 @@ scikit-learn==1.2.2
 sentence-transformers==2.2.2
 git+https://github.com/spotify/annoy.git
 gunicorn==20.1.0
-Werkzeug==2.1.2
