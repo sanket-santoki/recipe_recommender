@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Performance Metrics</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    .graph { margin-bottom: 40px; }
+    .description { margin-bottom: 10px; font-style: italic; }
+    img { max-width: 100%; border: 1px solid #ccc; }
+  </style>
+</head>
+<body>
+  <h1>Model Performance Metrics and Comparisons</h1>
+  
+  <div class="graph">
+    <h2>1. Mean CV Score per Candidate with Error Bars</h2>
+    <p class="description">{{ descriptions.graph1 }}</p>
+    <img src="data:image/png;base64,{{ graph1 }}" alt="Bar Plot with Error Bars">
+  </div>
+  
+  <div class="graph">
+    <h2>2. Distribution of Mean CV Scores</h2>
+    <p class="description">{{ descriptions.graph2 }}</p>
+    <img src="data:image/png;base64,{{ graph2 }}" alt="Histogram of Mean CV Scores">
+  </div>
+  
+  <div class="graph">
+    <h2>3. Mean CV Score vs. Mean Fit Time</h2>
+    <p class="description">{{ descriptions.graph3 }}</p>
+    <img src="data:image/png;base64,{{ graph3 }}" alt="Scatter Plot: CV Score vs Fit Time">
+  </div>
+  
+  {% if graph4 %}
+  <div class="graph">
+    <h2>4. Box Plot of CV Scores per Candidate (Across Folds)</h2>
+    <p class="description">{{ descriptions.graph4 }}</p>
+    <img src="data:image/png;base64,{{ graph4 }}" alt="Box Plot of CV Scores">
+  </div>
+  {% endif %}
+  
+  {% if graph5 %}
+  <div class="graph">
+    <h2>5. SVD Components vs. Mean CV Score</h2>
+    <p class="description">{{ descriptions.graph5 }}</p>
+    <img src="data:image/png;base64,{{ graph5 }}" alt="SVD Components vs. CV Score">
+  </div>
+  {% endif %}
+</body>
+</html>

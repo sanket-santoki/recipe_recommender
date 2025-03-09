@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MyRecipe - Recipe Recommendation System</title>
+  <!-- Tagify CSS from CDN -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@yaireo/tagify/dist/tagify.css">
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header>
+    <div class="header-top">
+      <img src="/static/logo.png" alt="MyRecipe Logo" class="logo-img">
+      <h1>MyRecipe</h1>
+    </div>
+    <!-- Navigation Tabs -->
+    <nav class="tabs">
+      <button class="tab-link active" data-tab="home-tab">Home</button>
+      <button class="tab-link" data-tab="pred-tab">Predictor</button>
+      <button class="tab-link" data-tab="results-tab">Results</button>
+      <button class="tab-link" data-tab="about-tab">About Me</button>
+    </nav>
+  </header>
+  
+  <div class="container">
+    <!-- Home Tab Content -->
+    <div id="home-tab" class="tab-content active">
+      <section class="home-section">
+        <h2>Welcome to MyRecipe</h2>
+        <p>
+          MyRecipe is a cutting-edge recipe recommendation system that leverages advanced machine learning techniques 
+          to suggest delicious recipes based on the ingredients you have. Our system is built from scratch using Python, 
+          Flask, and state-of-the-art NLP tools.
+        </p>
+        <p>
+          The model is trained on a dataset containing over <strong>48,000 recipes</strong>, each complete with detailed 
+          nutritional information, ingredient lists, ratings, and reviews. We employ advanced methods such as TF‑IDF (with 
+          dimensionality reduction via SVD) and modern embedding techniques. Our hyperparameter tuning and cross‑validation 
+          ensure high performance and stability.
+        </p>
+        <p>
+          Explore the system via the Predictor tab to get personalized recipe suggestions, review our performance metrics 
+          in the Results tab, or learn more about the developer in the About Me section.
+        </p>
+        <button id="start-btn" class="primary-btn" onclick="switchTab('pred-tab')">Get Started</button>
+      </section>
+    </div>
+    
+    <!-- Predictor Tab Content -->
+    <div id="pred-tab" class="tab-content">
+      <div class="input-container">
+        <input id="ingredients" placeholder="Type ingredients e.g., chicken, garlic, lemon">
+        <button id="get-rec-btn">Get Recommendations</button>
+      </div>
+      <div id="recipes-container">
+        <!-- Recipe cards will be injected here -->
+      </div>
+    </div>
+    
+    <!-- Results Tab Content -->
+    <div id="results-tab" class="tab-content">
+      <iframe id="metrics-frame" src="/results" frameborder="0"></iframe>
+    </div>
+    
+    <!-- About Me Tab Content -->
+    <div id="about-tab" class="tab-content">
+      <section class="about-section">
+        <h2>About the Developer</h2>
+        <div class="about-content">
+          <img src="/static/dev_photo.jpeg" alt="Developer Photo" class="dev-photo">
+          <div class="dev-info">
+            <p>
+              Hello, I'm Nidhi Pokiya, a passionate developer specializing in machine learning and data science. I built 
+              MyRecipe from the ground up to combine my love for food and technology. This system was developed using Python, 
+              Flask, and a suite of advanced ML libraries.
+            </p>
+            <p>
+              With a dataset of over 48,000 recipes, I designed a robust recommendation engine that leverages modern NLP 
+              techniques such as TF‑IDF with SVD and embedding-based methods. My focus is on delivering a seamless and 
+              personalized cooking experience.
+            </p>
+            <p>
+              I hope you enjoy using MyRecipe as much as I enjoyed creating it!
+            </p>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+  
+  <!-- Tagify JS from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@yaireo/tagify"></script>
+  <!-- Custom JS -->
+  <script src="/static/main.js"></script>
+  <script>
+    // Basic tab switching logic.
+    document.querySelectorAll('.tab-link').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('.tab-link').forEach(function(link) {
+          link.classList.remove('active');
+        });
+        document.querySelectorAll('.tab-content').forEach(function(content) {
+          content.classList.remove('active');
+        });
+        btn.classList.add('active');
+        document.getElementById(btn.getAttribute('data-tab')).classList.add('active');
+      });
+    });
+    
+    // Function to switch tabs programmatically.
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-link').forEach(function(link) {
+        link.classList.remove('active');
+      });
+      document.querySelectorAll('.tab-content').forEach(function(content) {
+        content.classList.remove('active');
+      });
+      document.querySelector('.tab-link[data-tab="' + tabId + '"]').classList.add('active');
+      document.getElementById(tabId).classList.add('active');
+    }
+  </script>
+</body>
+</html>

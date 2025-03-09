@@ -1,0 +1,282 @@
+/* CSS Variables for consistent styling */
+:root {
+  --primary-color: #4299e1;
+  --secondary-color: #5a67d8;
+  --light-color: #f1f4f8;
+  --text-color: #333;
+  --white: #fff;
+  --border-color: #e2e8f0;
+  --shadow-color: rgba(0, 0, 0, 0.1);
+}
+
+/* Reset defaults */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* Overall page styling */
+body {
+  font-family: 'Arial', sans-serif;
+  background: var(--light-color);
+  color: var(--text-color);
+  line-height: 1.6;
+  padding: 20px;
+}
+
+/* Header styling */
+header {
+  background: linear-gradient(135deg, var(--secondary-color), var(--primary-color));
+  color: var(--white);
+  padding: 20px;
+  text-align: center;
+  margin-bottom: 30px;
+}
+.header-top {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.logo-img {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  border: 2px solid var(--white);
+}
+
+/* Navigation Tabs styling */
+.tabs {
+  margin-top: 15px;
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.tab-link {
+  background: var(--white);
+  border: none;
+  padding: 10px 20px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: background 0.3s ease;
+}
+.tab-link:hover {
+  background: #e2e8f0;
+}
+.tab-link.active {
+  background: var(--primary-color);
+  color: var(--white);
+}
+
+/* Container */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* Tab content styling */
+.tab-content {
+  display: none;
+  padding: 20px;
+}
+.tab-content.active {
+  display: block;
+}
+
+/* Home page styling */
+.home-section {
+  background: var(--white);
+  padding: 30px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 6px var(--shadow-color);
+  margin-bottom: 30px;
+}
+.home-section h2 {
+  margin-bottom: 20px;
+  font-size: 28px;
+  text-align: center;
+}
+.home-section p {
+  margin-bottom: 15px;
+  font-size: 16px;
+  text-align: justify;
+}
+.primary-btn {
+  display: block;
+  margin: 20px auto;
+  background: var(--primary-color);
+  color: var(--white);
+  border: none;
+  padding: 12px 24px;
+  font-size: 18px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.3s ease;
+}
+.primary-btn:hover {
+  background: #2b6cb0;
+}
+
+/* Predictor Input container */
+.input-container {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 30px;
+}
+#ingredients {
+  width: 100%;
+  max-width: 500px;
+  padding: 10px;
+  font-size: 16px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+#get-rec-btn {
+  background-color: var(--primary-color);
+  color: var(--white);
+  border: none;
+  padding: 10px 20px;
+  font-size: 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+#get-rec-btn:hover {
+  background-color: #2b6cb0;
+}
+
+/* Recipe cards container */
+#recipes-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+/* Recipe card styling */
+.recipe-card {
+  background: var(--white);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 6px var(--shadow-color);
+  overflow: hidden;
+  transition: transform 0.2s ease;
+}
+.recipe-card:hover {
+  transform: translateY(-3px);
+}
+.recipe-card img {
+  width: 100%;
+  height: 160px;
+  object-fit: cover;
+}
+
+/* Recipe information styling */
+.recipe-info {
+  padding: 15px;
+}
+.recipe-header {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+.recipe-header h2 {
+  font-size: 20px;
+  margin: 0;
+  color: var(--text-color);
+}
+.rating {
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  color: #f39c12;
+}
+.rating .rating-value {
+  font-weight: bold;
+  margin-right: 5px;
+}
+.rating .review-count {
+  color: #888;
+}
+.recipe-info p {
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: #555;
+}
+.chips-container {
+  padding: 0 15px 10px;
+}
+.chips-container p {
+  font-weight: bold;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+.chip {
+  display: inline-block;
+  padding: 6px 12px;
+  margin: 4px 4px 0 0;
+  border-radius: 16px;
+  font-size: 13px;
+  color: var(--white);
+}
+.chip.available {
+  background-color: #38a169;
+}
+.chip.missing {
+  background-color: #e53e3e;
+}
+.similarity {
+  font-weight: bold;
+  padding: 0 15px 15px;
+  font-size: 14px;
+  color: #2d3748;
+}
+
+/* About Me page styling */
+.about-section {
+  background: var(--white);
+  padding: 30px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 6px var(--shadow-color);
+  margin-bottom: 30px;
+}
+.about-section h2 {
+  margin-bottom: 20px;
+  font-size: 28px;
+  text-align: center;
+}
+.about-content {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 20px;
+}
+.dev-photo {
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--primary-color);
+}
+.dev-info {
+  flex: 1;
+  font-size: 16px;
+  text-align: justify;
+}
+
+/* Iframe styling for Performance Metrics */
+#metrics-frame {
+  width: 100%;
+  height: 800px;
+  border: none;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}

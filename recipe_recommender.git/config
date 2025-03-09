@@ -1,0 +1,10 @@
+[core]
+	repositoryformatversion = 0
+	filemode = false
+	bare = true
+	symlinks = false
+	ignorecase = true
+[remote "origin"]
+	url = https://github.com/sanket-santoki/recipe_recommender.git
+	fetch = +refs/*:refs/*
+	mirror = true
