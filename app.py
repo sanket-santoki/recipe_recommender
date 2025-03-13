@@ -274,7 +274,7 @@ elif page == "Prediction":
 elif page == "About":
     st.title("About the Developer")
     st.markdown("""
-    **Developer:** Nidhi Pokiya
+    **Developer:** Sanket Santoki
 
     I am a passionate developer specializing in machine learning and data science. I built **MyRecipe** from scratch using Python, Streamlit, and advanced ML libraries.  
     This system was developed by processing a dataset of over **48,000 recipes** and designing a robust recommendation pipeline using techniques such as TF‑IDF with SVD and embedding-based models. Hyperparameter tuning and cross‑validation ensured high performance and stability.  
