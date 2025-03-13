@@ -1,42 +1,15 @@
-import warnings
-warnings.filterwarnings("ignore", category=FutureWarning)
-
-import matplotlib
-matplotlib.use('Agg')  # Use non-interactive backend.
-
-import logging
-import ast
-import os
-import io
-import base64
-import pickle
-import re
-import numpy as np
+import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-from flask import Flask, request, jsonify, render_template, send_from_directory
-from flask_cors import CORS
+import numpy as np
 import joblib
-from recipe_model import RecipeRecommender  # Ensure the model class is available
+import re
+import logging
 
-app = Flask(__name__, static_folder=".", template_folder="templates", static_url_path="")
-CORS(app)
-
-# Production logging configuration.
+# Set up logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-# Global loading of model artifacts.
-try:
-    recipe_model = joblib.load("recipe_recommender_model.pkl")
-    df = joblib.load("recipe_data.pkl")
-    logger.info("Model artifacts loaded successfully.")
-except Exception as e:
-    logger.error("Error loading model artifacts: %s", e)
-    # Set globals to None to avoid undefined errors; production should not run if these fail.
-    recipe_model = None
-    df = None
+# ---------- Utility Functions ----------
 
 def tokenize_text(text):
     """
@@ -50,6 +23,7 @@ def get_recipe_ingredients(ing):
     Convert the ingredients field to a list.
     First tries ast.literal_eval; if that fails, splits by comma.
     """
+    import ast
     if isinstance(ing, list):
         return ing
     if isinstance(ing, str):
@@ -63,64 +37,31 @@ def get_recipe_ingredients(ing):
             return [item.strip() for item in ing.split(",") if item.strip()]
     return []
 
-def exact_match(recipe_set, user_set):
+def predict_recipes(ingredients_input, recipe_model, df):
     """
-    Returns the set of ingredients that exactly match between the recipe and the user's input.
+    Given an ingredients string (comma-separated), use the model to find candidate recipes.
+    Returns a list of candidate dictionaries.
     """
-    return recipe_set.intersection(user_set)
-
-@app.route("/favicon.ico")
-def favicon():
-    if os.path.exists("favicon.ico"):
-        return send_from_directory(".", "favicon.ico", mimetype="image/vnd.microsoft.icon")
-    return "", 204
-
-@app.route("/")
-def index():
-    return render_template("index.html")
-
-@app.route("/ingredients", methods=["GET"])
-def ingredients():
-    if df is None:
-        return jsonify({"error": "Data not loaded"}), 500
-    ingredients_set = set()
-    for _, row in df.iterrows():
-        ing_list = get_recipe_ingredients(row.get("ingredients_list", []))
-        for ing in ing_list:
-            ingredients_set.add(ing.strip().lower())
-    return jsonify(sorted(list(ingredients_set)))
-
-@app.route("/recommend", methods=["POST"])
-def recommend():
-    if recipe_model is None or df is None:
-        return jsonify({"error": "Model or data not loaded"}), 500
-
-    data = request.get_json(silent=True)
-    if not data or "ingredients" not in data:
-        return jsonify({"error": "No ingredients provided"}), 400
-
-    user_input = data["ingredients"].strip().lower()
-    if not user_input:
-        return jsonify({"error": "No ingredients provided"}), 400
-
     # Process user input.
-    user_list = [s.strip().lower() for s in user_input.split(",") if s.strip()]
+    user_list = [s.strip().lower() for s in ingredients_input.split(",") if s.strip()]
+    if not user_list:
+        return []
     user_set = set(user_list)
     user_text = " ".join(user_list)
-
+    
     try:
         # Increase candidate pool for better filtering.
         distances, indices = recipe_model.kneighbors([user_text], n_neighbors=20)
     except Exception as e:
         logger.error("Error during model inference: %s", e)
-        return jsonify({"error": "Model inference failed"}), 500
-
+        return []
+    
     candidates = []
     distances = distances[0]
     indices = indices[0]
     for dist, idx in zip(distances, indices):
         row = df.iloc[idx]
-        recipe_ingredients = list(get_recipe_ingredients(row["ingredients_list"]))
+        recipe_ingredients = get_recipe_ingredients(row["ingredients_list"])
         normalized_recipe_ings = [ing.strip().lower() for ing in recipe_ingredients]
         
         # First, try for an exact match.
@@ -161,141 +102,106 @@ def recommend():
             "is_exact": is_exact
         }
         candidates.append(candidate)
-
+    
     # If any candidate has an exact match, filter out others.
     if any(cand["is_exact"] for cand in candidates):
         candidates = [cand for cand in candidates if cand["is_exact"]]
     
-    # Sort by descending similarity and then by fewest missing ingredients.
+    # Sort candidates by descending similarity, then by fewer missing ingredients.
     candidates.sort(key=lambda c: (-c["similarity"], c["missing_count"]))
-    # Return top 5 results.
-    candidates = candidates[:5]
-    
-    return jsonify(candidates)
+    # Return only the top 5 results.
+    return candidates[:5]
 
-@app.route("/results")
-def results():
+# ---------- Global Loading of Model and Data ----------
+@st.cache_resource(show_spinner=False)
+def load_model_and_data():
     try:
-        with open("cv_results.pkl", "rb") as f:
-            cv_results = pickle.load(f)
+        model = joblib.load("recipe_recommender_model.pkl")
+        data = joblib.load("recipe_data.pkl")
+        logger.info("Model and data loaded successfully.")
+        return model, data
     except Exception as e:
-        logger.error("Error loading cv_results: %s", e)
-        return "Error loading cv_results"
+        logger.error("Error loading model or data: %s", e)
+        return None, None
+
+recipe_model, df = load_model_and_data()
+
+# ---------- Streamlit Page Layout ----------
+
+# Set page config.
+st.set_page_config(page_title="MyRecipe", page_icon="🍲", layout="wide")
+
+# Sidebar navigation.
+page = st.sidebar.selectbox("Navigation", ["Home", "Prediction", "About"])
+
+# ---------- Home Page ----------
+if page == "Home":
+    st.title("Welcome to MyRecipe")
+    st.image("static/logo.png", width=100)
+    st.markdown("""
+    ### About MyRecipe
+    MyRecipe is a cutting-edge recipe recommendation system that leverages advanced machine learning techniques to suggest delicious recipes based on the ingredients you have.
+
+    **Key Features:**
+    - **Data:** Trained on a dataset of over **48,000 recipes** with detailed nutritional information, ingredient lists, ratings, and reviews.
+    - **Model:** Utilizes advanced methods like TF‑IDF with SVD and modern embedding techniques. Hyperparameter tuning and cross‑validation ensure robust, stable performance.
+    - **User-Friendly:** Easily enter your available ingredients to get personalized recipe recommendations.
     
-    df_cv = pd.DataFrame(cv_results)
-    df_cv.replace([np.inf, -np.inf], np.nan, inplace=True)
+    Explore the app by selecting **Prediction** from the sidebar to get started, or learn more about the developer in the **About** section.
+    """)
     
-    # Graph 1: Bar Plot with Error Bars.
-    fig1, ax1 = plt.subplots(figsize=(10,6))
-    ax1.errorbar(df_cv.index, df_cv['mean_test_score'], yerr=df_cv['std_test_score'],
-                 fmt="", marker="o", ecolor='red', capsize=5, linestyle='-', markersize=8)
-    ax1.set_title("Mean CV Score per Candidate with Error Bars")
-    ax1.set_xlabel("Candidate Index")
-    ax1.set_ylabel("Mean CV Score")
-    ax1.grid(True)
-    buf1 = io.BytesIO()
-    fig1.savefig(buf1, format='png')
-    buf1.seek(0)
-    graph1 = base64.b64encode(buf1.getvalue()).decode('utf-8')
-    plt.close(fig1)
+    st.markdown("---")
+    st.subheader("System Details")
+    st.markdown("""
+    - **Repository:** [GitHub Repository](https://github.com/sanket-santoki/recipe_recommender)
+    - **Model Training:** The model was trained using a custom pipeline that includes data cleaning, feature extraction with TF‑IDF (and optional SVD), and K‑nearest neighbors for recommendation.
+    - **Dataset:** Over 48,000 recipes with detailed information.
+    - **Deployment:** This app is deployed using a production‑ready WSGI server.
+    """)
     
-    # Graph 2: Histogram of Mean CV Scores.
-    fig2, ax2 = plt.subplots(figsize=(10,6))
-    sns.histplot(df_cv['mean_test_score'], kde=True, bins=10, color='skyblue', ax=ax2)
-    ax2.set_title("Distribution of Mean CV Scores")
-    ax2.set_xlabel("Mean CV Score")
-    ax2.set_ylabel("Frequency")
-    buf2 = io.BytesIO()
-    fig2.savefig(buf2, format='png')
-    buf2.seek(0)
-    graph2 = base64.b64encode(buf2.getvalue()).decode('utf-8')
-    plt.close(fig2)
+# ---------- Prediction Page ----------
+elif page == "Prediction":
+    st.title("Recipe Predictor")
+    st.markdown("Enter the ingredients you have (separated by commas) to get personalized recipe recommendations.")
     
-    # Graph 3: Scatter Plot of Mean CV Score vs. Mean Fit Time.
-    fig3, ax3 = plt.subplots(figsize=(10,6))
-    ax3.scatter(df_cv['mean_test_score'], df_cv['mean_fit_time'], color='green', s=100)
-    ax3.set_title("Mean CV Score vs. Mean Fit Time")
-    ax3.set_xlabel("Mean CV Score")
-    ax3.set_ylabel("Mean Fit Time (seconds)")
-    ax3.grid(True)
-    buf3 = io.BytesIO()
-    fig3.savefig(buf3, format='png')
-    buf3.seek(0)
-    graph3 = base64.b64encode(buf3.getvalue()).decode('utf-8')
-    plt.close(fig3)
+    # Option: Use a text input (or you could also use st.multiselect with available ingredients from /ingredients)
+    user_input = st.text_input("Ingredients", placeholder="e.g. milk, cheese, tomato")
     
-    # Graph 4: Box Plot of CV Scores per Fold (if available).
-    if 'split0_test_score' in df_cv.columns:
-        folds = []
-        num_folds = 0
-        for col in df_cv.columns:
-            if col.startswith("split") and col.endswith("test_score"):
-                num_folds += 1
-                folds.append(df_cv[col])
-        if num_folds > 0:
-            fold_scores_df = pd.DataFrame(folds).T
-            fold_scores_df.columns = [f"Fold {i+1}" for i in range(num_folds)]
-            fig4, ax4 = plt.subplots(figsize=(10,6))
-            sns.boxplot(data=fold_scores_df, ax=ax4)
-            ax4.set_title("Box Plot of CV Scores per Candidate (Across Folds)")
-            ax4.set_xlabel("Fold")
-            ax4.set_ylabel("CV Score")
-            buf4 = io.BytesIO()
-            fig4.savefig(buf4, format='png')
-            buf4.seek(0)
-            graph4 = base64.b64encode(buf4.getvalue()).decode('utf-8')
-            plt.close(fig4)
+    if st.button("Get Recommendations"):
+        if not user_input:
+            st.error("Please enter at least one ingredient.")
+        elif recipe_model is None or df is None:
+            st.error("Model or data not loaded.")
         else:
-            graph4 = None
-    else:
-        graph4 = None
-        
-    # Graph 5: Scatter Plot of SVD Components vs. Mean CV Score (if applicable).
-    svd_components = []
-    cv_scores = []
-    for i, params in enumerate(df_cv['params']):
-        if params.get("use_svd", False) and "svd_params" in params:
-            svd_components.append(params["svd_params"].get("n_components", None))
-            cv_scores.append(df_cv['mean_test_score'][i])
-    if svd_components:
-        fig5, ax5 = plt.subplots(figsize=(10,6))
-        ax5.scatter(svd_components, cv_scores, color='purple', s=100)
-        ax5.set_title("SVD Components vs. Mean CV Score")
-        ax5.set_xlabel("Number of SVD Components")
-        ax5.set_ylabel("Mean CV Score")
-        ax5.grid(True)
-        buf5 = io.BytesIO()
-        fig5.savefig(buf5, format='png')
-        buf5.seek(0)
-        graph5 = base64.b64encode(buf5.getvalue()).decode('utf-8')
-        plt.close(fig5)
-    else:
-        graph5 = None
+            with st.spinner("Fetching recommendations..."):
+                results = predict_recipes(user_input, recipe_model, df)
+            if not results:
+                st.warning("No recommendations found.")
+            else:
+                st.success("Top recommendations:")
+                for rec in results:
+                    st.markdown(f"**{rec['recipe_name']}**  \n"
+                                f"Rating: {rec['aver_rate']} ({rec['review_nums']} reviews)  \n"
+                                f"Calories: {rec['calories']} | Fat: {rec['fat']}g | Carbs: {rec['carbohydrates']}g | Protein: {rec['protein']}g  \n"
+                                f"**Available Ingredients:** {', '.join(rec['available_ingredients'])}  \n"
+                                f"**Missing Ingredients:** {', '.join(rec['missing_ingredients'])}  \n"
+                                f"Similarity Score: {rec['similarity']}  \n"
+                                "___")
+                    
+# ---------- About Page ----------
+elif page == "About":
+    st.title("About the Developer")
+    st.image("static/dev_photo.jpg", width=150)
+    st.markdown("""
+    **Hello! I'm [Your Name].**
 
-    descriptions = {
-        "graph1": "Bar Plot: Displays the mean CV score per candidate with error bars representing the standard deviation across folds. It shows both the average performance and the stability of each candidate model.",
-        "graph2": "Histogram: Shows the distribution of the mean CV scores across candidate models, indicating how the performance scores are spread out.",
-        "graph3": "Scatter Plot: Compares the mean CV score with the mean fit time for each candidate model, highlighting any trade-offs between performance and training speed.",
-        "graph4": "Box Plot: (If available) Displays the distribution of CV scores for each candidate across folds, illustrating model stability and variability.",
-        "graph5": "Scatter Plot: (Optional) Visualizes the relationship between the number of SVD components and the mean CV score, helping to determine the optimal dimensionality if SVD is used."
-    }
+    I am a passionate developer specializing in machine learning and data science. I built **MyRecipe** from scratch using Python, Flask, and advanced ML libraries. This system processes a dataset of over 48,000 recipes and leverages state-of-the-art techniques (such as TF‑IDF with SVD and embedding-based methods) to deliver personalized recipe recommendations.
 
-    return render_template("results.html", 
-                           graph1=graph1, graph2=graph2, graph3=graph3, 
-                           graph4=graph4, graph5=graph5,
-                           descriptions=descriptions)
+    **What I did:**
+    - Data cleaning and processing of 48,000+ recipes.
+    - Designed and implemented a recommendation pipeline with hyperparameter tuning and cross‑validation.
+    - Developed and deployed a production‑ready web application for recipe recommendations.
 
-if __name__ == "__main__":
-    try:
-        if os.path.exists("recipe_recommender_model.pkl"):
-            recipe_model = joblib.load("recipe_recommender_model.pkl")
-        else:
-            logger.error("recipe_recommender_model.pkl not found. Exiting.")
-            raise FileNotFoundError("recipe_recommender_model.pkl not found")
-        df = joblib.load("recipe_data.pkl")
-        logger.info("Model artifacts loaded successfully.")
-    except Exception as e:
-        logger.error("Error loading model artifacts: %s", e)
-        raise e
-    # Production: debug should be False.
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    I love combining technology and culinary creativity to make food discovery fun and easy. Thanks for checking out MyRecipe!
+    """)
+
