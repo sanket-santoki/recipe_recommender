@@ -27,6 +27,17 @@ CORS(app)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
+# Global loading of model artifacts.
+try:
+    recipe_model = joblib.load("recipe_recommender_model.pkl")
+    df = joblib.load("recipe_data.pkl")
+    logger.info("Model artifacts loaded successfully.")
+except Exception as e:
+    logger.error("Error loading model artifacts: %s", e)
+    # Set globals to None to avoid undefined errors; production should not run if these fail.
+    recipe_model = None
+    df = None
+
 def tokenize_text(text):
     """
     Tokenizes a text string into a set of lowercase word tokens.
@@ -70,6 +81,8 @@ def index():
 
 @app.route("/ingredients", methods=["GET"])
 def ingredients():
+    if df is None:
+        return jsonify({"error": "Data not loaded"}), 500
     ingredients_set = set()
     for _, row in df.iterrows():
         ing_list = get_recipe_ingredients(row.get("ingredients_list", []))
@@ -79,6 +92,9 @@ def ingredients():
 
 @app.route("/recommend", methods=["POST"])
 def recommend():
+    if recipe_model is None or df is None:
+        return jsonify({"error": "Model or data not loaded"}), 500
+
     data = request.get_json(silent=True)
     if not data or "ingredients" not in data:
         return jsonify({"error": "No ingredients provided"}), 400
