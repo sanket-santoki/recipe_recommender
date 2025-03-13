@@ -4,6 +4,8 @@ import pandas as pd
 import numpy as np
 import re
 import logging
+import base64
+import io
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -14,14 +16,14 @@ logger = logging.getLogger(__name__)
 def tokenize_text(text):
     """
     Tokenizes a text string into a set of lowercase word tokens.
-    E.g., "gallon whole milk" -> {"gallon", "whole", "milk"}
+    Example: "gallon whole milk" -> {"gallon", "whole", "milk"}
     """
     return set(re.findall(r'\w+', text.lower()))
 
 def get_recipe_ingredients(ing):
     """
-    Convert the ingredients field to a list.
-    First tries ast.literal_eval; if that fails, splits by comma.
+    Converts the ingredients field into a list.
+    Tries ast.literal_eval first; if that fails, splits by comma.
     """
     import ast
     if isinstance(ing, list):
@@ -39,19 +41,24 @@ def get_recipe_ingredients(ing):
 
 def get_unique_ingredients(df):
     """
-    Get a sorted list of unique ingredient tokens from the DataFrame.
+    Returns a sorted list of unique ingredient tokens from the DataFrame.
+    Filters out purely numeric tokens.
     """
-    unique_tokens = set()
-    for ing_field in df["ingredients_list"]:
-        for ing in get_recipe_ingredients(ing_field):
-            unique_tokens.update(tokenize_text(ing))
-    return sorted(unique_tokens)
+    unique_set = set()
+    for _, row in df.iterrows():
+        ings = get_recipe_ingredients(row.get("ingredients_list", []))
+        for ing in ings:
+            token = ing.strip().lower()
+            if token and not token.isdigit():
+                unique_set.add(token)
+    return sorted(list(unique_set))
 
 def predict_recipes(ingredients_input, model, df):
     """
-    Given a comma-separated ingredients input, return top candidate recipes.
+    Given a comma-separated string of ingredients, uses the loaded model and DataFrame
+    to generate a list of recommended recipes.
+    Returns a list of candidate recipe dictionaries (top 5).
     """
-    # Process user input.
     user_list = [s.strip().lower() for s in ingredients_input.split(",") if s.strip()]
     if not user_list:
         return []
@@ -59,6 +66,7 @@ def predict_recipes(ingredients_input, model, df):
     user_text = " ".join(user_list)
     
     try:
+        # Get a larger candidate pool for better filtering.
         distances, indices = model.kneighbors([user_text], n_neighbors=20)
     except Exception as e:
         logger.error("Error during model inference: %s", e)
@@ -71,10 +79,11 @@ def predict_recipes(ingredients_input, model, df):
         row = df.iloc[idx]
         recipe_ingredients = get_recipe_ingredients(row["ingredients_list"])
         normalized_recipe_ings = [ing.strip().lower() for ing in recipe_ingredients]
-        # Try for exact matches first.
+        # Try for an exact match.
         exact_matches = [ing for ing in normalized_recipe_ings if ing in user_set]
-        # Else, try substring match.
+        # If no exact match, try substring match.
         similar_matches = [ing for ing in normalized_recipe_ings if any(token in ing for token in user_set)]
+        
         if exact_matches:
             available = exact_matches
             is_exact = True
@@ -83,6 +92,7 @@ def predict_recipes(ingredients_input, model, df):
             is_exact = False
         else:
             continue
+        
         missing = list(set(normalized_recipe_ings) - set(available))
         similarity = round(1 - dist, 2)
         candidate = {
@@ -107,32 +117,36 @@ def predict_recipes(ingredients_input, model, df):
             "is_exact": is_exact
         }
         candidates.append(candidate)
-        
-    # If any candidate has an exact match, filter out others.
+    
+    # If any candidate has an exact match, filter to keep only exact matches.
     if any(cand["is_exact"] for cand in candidates):
         candidates = [cand for cand in candidates if cand["is_exact"]]
     
-    # Sort candidates by descending similarity and fewest missing ingredients.
+    # Sort by descending similarity and then by fewer missing ingredients.
     candidates.sort(key=lambda c: (-c["similarity"], c["missing_count"]))
     return candidates[:5]
 
 def render_recipe_card(recipe):
     """
-    Returns HTML for a styled recipe card.
+    Returns a string of HTML representing a styled recipe card.
+    Uses inline HTML/CSS for display.
     """
     available = ", ".join(recipe["available_ingredients"]) if recipe["available_ingredients"] else "None"
     missing = ", ".join(recipe["missing_ingredients"]) if recipe["missing_ingredients"] else "None"
+    # If image_url is empty, use a placeholder image.
+    img_url = recipe["image_url"] if recipe["image_url"] else "https://via.placeholder.com/300x160.png?text=No+Image"
     card_html = f"""
     <div class="card">
-      <div class="card-header">
+      <div class="card-img">
+        <img src="{img_url}" alt="{recipe['recipe_name']}">
+      </div>
+      <div class="card-content">
         <h3>{recipe['recipe_name']}</h3>
         <p class="rating">Rating: {recipe['aver_rate']} ({recipe['review_nums']} reviews)</p>
-      </div>
-      <div class="card-body">
         <p><strong>Nutrition:</strong> Calories: {recipe['calories']}, Fat: {recipe['fat']}g, Carbs: {recipe['carbohydrates']}g, Protein: {recipe['protein']}g</p>
-        <p><strong>Available:</strong> {available}</p>
-        <p><strong>Missing:</strong> {missing}</p>
-        <p><strong>Similarity:</strong> {recipe['similarity']}</p>
+        <p><strong>Available Ingredients:</strong> {available}</p>
+        <p><strong>Missing Ingredients:</strong> {missing}</p>
+        <p><strong>Similarity Score:</strong> {recipe['similarity']}</p>
       </div>
     </div>
     """
@@ -156,86 +170,84 @@ recipe_model, df = load_model_and_data()
 
 st.set_page_config(page_title="MyRecipe", page_icon="🍲", layout="wide")
 
-# Inject CSS for styling cards and animations.
+# Sidebar Navigation
+page = st.sidebar.radio("Navigation", ["Home", "Prediction", "About"])
+
+# Custom CSS for enhanced design and animations.
 st.markdown("""
 <style>
 /* Overall styling */
 body { background-color: #f1f4f8; }
-/* Recipe card styling */
+header { background: linear-gradient(135deg, #5a67d8, #4299e1); color: #fff; padding: 20px; text-align: center; }
+.header-top { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.logo-img { width: 60px; height: 60px; border-radius: 50%; border: 2px solid #fff; }
+.sidebar .stRadio label { font-size: 16px; }
+
+/* Card styles for recipe */
 .card {
   background-color: #fff;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
-  padding: 16px;
-  margin: 16px 0;
+  overflow: hidden;
   box-shadow: 0 4px 6px rgba(0,0,0,0.1);
   transition: transform 0.3s ease, box-shadow 0.3s ease;
-}
-.card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 8px 12px rgba(0,0,0,0.15);
-}
-.card-header h3 {
-  margin-bottom: 4px;
-  font-size: 22px;
-  color: #333;
-}
-.rating {
-  color: #f39c12;
-  font-size: 14px;
-}
-.card-body p {
-  margin: 6px 0;
-  font-size: 16px;
-  color: #555;
-}
-/* Navigation Sidebar styling */
-.sidebar .stRadio label {
-  font-size: 16px;
-}
-/* Page Header */
-.page-title {
-  font-size: 32px;
   margin-bottom: 20px;
-  color: #333;
 }
-/* About page styling */
-.about-content {
-  font-size: 18px;
-  line-height: 1.6;
-  color: #333;
-}
+.card:hover { transform: translateY(-5px); box-shadow: 0 8px 12px rgba(0,0,0,0.15); }
+.card-img img { width: 100%; height: 160px; object-fit: cover; }
+.card-content { padding: 15px; }
+.card-content h3 { margin-bottom: 8px; font-size: 22px; color: #333; }
+.rating { color: #f39c12; font-size: 14px; margin-bottom: 8px; }
+.card-content p { margin-bottom: 8px; font-size: 16px; color: #555; }
+
+/* Home page styles */
+.home-section { background: #fff; padding: 30px; border: 1px solid #e2e8f0; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 30px; }
+.home-section h2 { margin-bottom: 20px; font-size: 32px; text-align: center; color: #333; }
+.home-section p { margin-bottom: 15px; font-size: 16px; text-align: justify; }
+
+/* Predictor page styles */
+.input-container { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; margin-bottom: 30px; }
+#ingredients { width: 100%; max-width: 500px; padding: 10px; font-size: 16px; border: 1px solid #ccc; border-radius: 4px; }
+#get-rec-btn { background-color: #4299e1; color: #fff; border: none; padding: 10px 20px; font-size: 16px; border-radius: 4px; cursor: pointer; transition: background-color 0.3s ease; }
+#get-rec-btn:hover { background-color: #2b6cb0; }
+
+/* About page styles */
+.about-section { background: #fff; padding: 30px; border: 1px solid #e2e8f0; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 30px; }
+.about-section h2 { margin-bottom: 20px; font-size: 32px; text-align: center; color: #333; }
+.about-section p { margin-bottom: 15px; font-size: 18px; text-align: justify; color: #333; }
+
+/* Iframe styling for additional pages */
+iframe { width: 100%; border: none; }
 </style>
 """, unsafe_allow_html=True)
-
-# Sidebar Navigation
-page = st.sidebar.radio("Navigation", ["Home", "Prediction", "About"])
 
 # ---------------- Home Page ----------------
 if page == "Home":
     st.title("Welcome to MyRecipe")
+    st.image("static/logo.png", width=120)
     st.markdown("""
-    MyRecipe is a state-of-the-art recipe recommendation system that leverages advanced machine learning techniques to suggest delicious recipes based on the ingredients you have.  
-    **Key Features:**  
-    - Over **48,000 recipes** with detailed nutritional info and ingredient lists.
-    - Uses advanced methods like TF‑IDF with SVD and embedding techniques.
-    - Hyperparameter tuning and cross‑validation ensure robust and stable recommendations.
+    **MyRecipe** is a state-of-the-art recipe recommendation system that leverages advanced machine learning techniques to suggest delicious recipes based on the ingredients you have.  
+    **Key Features:**
+    - Over **48,000 recipes** with detailed nutritional and ingredient information.
+    - Advanced models built using TF‑IDF with SVD and modern embedding techniques.
+    - Hyperparameter tuning and cross‑validation ensure robust, stable recommendations.
     """)
     st.markdown("---")
     st.subheader("System Details")
     st.markdown("""
-    **Repository:** [GitHub Repository](https://github.com/sanket-santoki/recipe_recommender)  
-    **Model Training:** The model was built using Python, Flask, and advanced ML libraries. It includes data cleaning, feature extraction, and K‑nearest neighbors for recommendation.  
-    **Dataset:** Over 48,000 recipes.  
-    **Deployment:** This app is deployed using a production‑ready WSGI server.
+    - **Repository:** [GitHub Repository](https://github.com/sanket-santoki/recipe_recommender)  
+    - **Model Training:** Developed with Python, Flask, and advanced ML libraries; the pipeline includes data cleaning, feature extraction, and a K‑nearest neighbors recommendation engine.  
+    - **Dataset:** Over 48,000 recipes.  
+    - **Deployment:** Deployed using a production‑ready WSGI server.
     """)
+    st.button("Get Started", on_click=lambda: st.session_state.update(page="Prediction"))
 
 # ---------------- Prediction Page ----------------
 elif page == "Prediction":
     st.title("Recipe Predictor")
-    st.markdown("Enter the ingredients you have to get personalized recipe recommendations.")
+    st.markdown("Select the ingredients you have to get personalized recipe recommendations.")
     
-    # Create a multiselect dropdown from available ingredients.
+    # Populate ingredients dropdown from the DataFrame.
     if df is not None:
         available_ings = get_unique_ingredients(df)
     else:
@@ -254,8 +266,7 @@ elif page == "Prediction":
             if not results:
                 st.warning("No recommendations found.")
             else:
-                st.success("Top recommendations:")
-                # Render each recipe card using columns for a responsive layout.
+                st.success("Top Recommendations:")
                 for rec in results:
                     st.markdown(render_recipe_card(rec), unsafe_allow_html=True)
 
@@ -263,10 +274,9 @@ elif page == "Prediction":
 elif page == "About":
     st.title("About the Developer")
     st.markdown("""
-    **Developer:** [Nidhi Pokiya]
+    **Developer:** Nidhi Pokiya
 
-    I am a passionate developer specializing in machine learning and data science. I built **MyRecipe** from scratch using Python, Streamlit, and a suite of advanced ML libraries.  
-    This system was developed by processing a dataset of over **48,000 recipes**, and building a robust recommendation pipeline using techniques like TF‑IDF with SVD and embedding-based models. Hyperparameter tuning and cross‑validation ensured a stable, high‑performance model.  
-    I enjoy combining technology with culinary creativity to help users discover new recipes. Thank you for using MyRecipe!
+    I am a passionate developer specializing in machine learning and data science. I built **MyRecipe** from scratch using Python, Streamlit, and advanced ML libraries.  
+    This system was developed by processing a dataset of over **48,000 recipes** and designing a robust recommendation pipeline using techniques such as TF‑IDF with SVD and embedding-based models. Hyperparameter tuning and cross‑validation ensured high performance and stability.  
+    I enjoy blending technology with culinary creativity to help users discover new recipes. Thank you for using **MyRecipe**!
     """)
-
