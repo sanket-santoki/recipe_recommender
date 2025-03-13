@@ -1,15 +1,15 @@
 import streamlit as st
+import joblib
 import pandas as pd
 import numpy as np
-import joblib
 import re
 import logging
 
-# Set up logging
+# Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-# ---------- Utility Functions ----------
+# ---------------- Utility Functions ----------------
 
 def tokenize_text(text):
     """
@@ -37,10 +37,19 @@ def get_recipe_ingredients(ing):
             return [item.strip() for item in ing.split(",") if item.strip()]
     return []
 
-def predict_recipes(ingredients_input, recipe_model, df):
+def get_unique_ingredients(df):
     """
-    Given an ingredients string (comma-separated), use the model to find candidate recipes.
-    Returns a list of candidate dictionaries.
+    Get a sorted list of unique ingredient tokens from the DataFrame.
+    """
+    unique_tokens = set()
+    for ing_field in df["ingredients_list"]:
+        for ing in get_recipe_ingredients(ing_field):
+            unique_tokens.update(tokenize_text(ing))
+    return sorted(unique_tokens)
+
+def predict_recipes(ingredients_input, model, df):
+    """
+    Given a comma-separated ingredients input, return top candidate recipes.
     """
     # Process user input.
     user_list = [s.strip().lower() for s in ingredients_input.split(",") if s.strip()]
@@ -50,8 +59,7 @@ def predict_recipes(ingredients_input, recipe_model, df):
     user_text = " ".join(user_list)
     
     try:
-        # Increase candidate pool for better filtering.
-        distances, indices = recipe_model.kneighbors([user_text], n_neighbors=20)
+        distances, indices = model.kneighbors([user_text], n_neighbors=20)
     except Exception as e:
         logger.error("Error during model inference: %s", e)
         return []
@@ -63,12 +71,10 @@ def predict_recipes(ingredients_input, recipe_model, df):
         row = df.iloc[idx]
         recipe_ingredients = get_recipe_ingredients(row["ingredients_list"])
         normalized_recipe_ings = [ing.strip().lower() for ing in recipe_ingredients]
-        
-        # First, try for an exact match.
+        # Try for exact matches first.
         exact_matches = [ing for ing in normalized_recipe_ings if ing in user_set]
-        # If no exact match, try substring match.
+        # Else, try substring match.
         similar_matches = [ing for ing in normalized_recipe_ings if any(token in ing for token in user_set)]
-        
         if exact_matches:
             available = exact_matches
             is_exact = True
@@ -77,7 +83,6 @@ def predict_recipes(ingredients_input, recipe_model, df):
             is_exact = False
         else:
             continue
-        
         missing = list(set(normalized_recipe_ings) - set(available))
         similarity = round(1 - dist, 2)
         candidate = {
@@ -102,17 +107,38 @@ def predict_recipes(ingredients_input, recipe_model, df):
             "is_exact": is_exact
         }
         candidates.append(candidate)
-    
+        
     # If any candidate has an exact match, filter out others.
     if any(cand["is_exact"] for cand in candidates):
         candidates = [cand for cand in candidates if cand["is_exact"]]
     
-    # Sort candidates by descending similarity, then by fewer missing ingredients.
+    # Sort candidates by descending similarity and fewest missing ingredients.
     candidates.sort(key=lambda c: (-c["similarity"], c["missing_count"]))
-    # Return only the top 5 results.
     return candidates[:5]
 
-# ---------- Global Loading of Model and Data ----------
+def render_recipe_card(recipe):
+    """
+    Returns HTML for a styled recipe card.
+    """
+    available = ", ".join(recipe["available_ingredients"]) if recipe["available_ingredients"] else "None"
+    missing = ", ".join(recipe["missing_ingredients"]) if recipe["missing_ingredients"] else "None"
+    card_html = f"""
+    <div class="card">
+      <div class="card-header">
+        <h3>{recipe['recipe_name']}</h3>
+        <p class="rating">Rating: {recipe['aver_rate']} ({recipe['review_nums']} reviews)</p>
+      </div>
+      <div class="card-body">
+        <p><strong>Nutrition:</strong> Calories: {recipe['calories']}, Fat: {recipe['fat']}g, Carbs: {recipe['carbohydrates']}g, Protein: {recipe['protein']}g</p>
+        <p><strong>Available:</strong> {available}</p>
+        <p><strong>Missing:</strong> {missing}</p>
+        <p><strong>Similarity:</strong> {recipe['similarity']}</p>
+      </div>
+    </div>
+    """
+    return card_html
+
+# ---------------- Global Loading of Model and Data ----------------
 @st.cache_resource(show_spinner=False)
 def load_model_and_data():
     try:
@@ -126,82 +152,121 @@ def load_model_and_data():
 
 recipe_model, df = load_model_and_data()
 
-# ---------- Streamlit Page Layout ----------
+# ---------------- Streamlit UI ----------------
 
-# Set page config.
 st.set_page_config(page_title="MyRecipe", page_icon="🍲", layout="wide")
 
-# Sidebar navigation.
-page = st.sidebar.selectbox("Navigation", ["Home", "Prediction", "About"])
+# Inject CSS for styling cards and animations.
+st.markdown("""
+<style>
+/* Overall styling */
+body { background-color: #f1f4f8; }
+/* Recipe card styling */
+.card {
+  background-color: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 16px 0;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 12px rgba(0,0,0,0.15);
+}
+.card-header h3 {
+  margin-bottom: 4px;
+  font-size: 22px;
+  color: #333;
+}
+.rating {
+  color: #f39c12;
+  font-size: 14px;
+}
+.card-body p {
+  margin: 6px 0;
+  font-size: 16px;
+  color: #555;
+}
+/* Navigation Sidebar styling */
+.sidebar .stRadio label {
+  font-size: 16px;
+}
+/* Page Header */
+.page-title {
+  font-size: 32px;
+  margin-bottom: 20px;
+  color: #333;
+}
+/* About page styling */
+.about-content {
+  font-size: 18px;
+  line-height: 1.6;
+  color: #333;
+}
+</style>
+""", unsafe_allow_html=True)
 
-# ---------- Home Page ----------
+# Sidebar Navigation
+page = st.sidebar.radio("Navigation", ["Home", "Prediction", "About"])
+
+# ---------------- Home Page ----------------
 if page == "Home":
     st.title("Welcome to MyRecipe")
-    st.image("static/logo.png", width=100)
     st.markdown("""
-    ### About MyRecipe
-    MyRecipe is a cutting-edge recipe recommendation system that leverages advanced machine learning techniques to suggest delicious recipes based on the ingredients you have.
-
-    **Key Features:**
-    - **Data:** Trained on a dataset of over **48,000 recipes** with detailed nutritional information, ingredient lists, ratings, and reviews.
-    - **Model:** Utilizes advanced methods like TF‑IDF with SVD and modern embedding techniques. Hyperparameter tuning and cross‑validation ensure robust, stable performance.
-    - **User-Friendly:** Easily enter your available ingredients to get personalized recipe recommendations.
-    
-    Explore the app by selecting **Prediction** from the sidebar to get started, or learn more about the developer in the **About** section.
+    MyRecipe is a state-of-the-art recipe recommendation system that leverages advanced machine learning techniques to suggest delicious recipes based on the ingredients you have.  
+    **Key Features:**  
+    - Over **48,000 recipes** with detailed nutritional info and ingredient lists.
+    - Uses advanced methods like TF‑IDF with SVD and embedding techniques.
+    - Hyperparameter tuning and cross‑validation ensure robust and stable recommendations.
     """)
-    
     st.markdown("---")
     st.subheader("System Details")
     st.markdown("""
-    - **Repository:** [GitHub Repository](https://github.com/sanket-santoki/recipe_recommender)
-    - **Model Training:** The model was trained using a custom pipeline that includes data cleaning, feature extraction with TF‑IDF (and optional SVD), and K‑nearest neighbors for recommendation.
-    - **Dataset:** Over 48,000 recipes with detailed information.
-    - **Deployment:** This app is deployed using a production‑ready WSGI server.
+    **Repository:** [GitHub Repository](https://github.com/sanket-santoki/recipe_recommender)  
+    **Model Training:** The model was built using Python, Flask, and advanced ML libraries. It includes data cleaning, feature extraction, and K‑nearest neighbors for recommendation.  
+    **Dataset:** Over 48,000 recipes.  
+    **Deployment:** This app is deployed using a production‑ready WSGI server.
     """)
-    
-# ---------- Prediction Page ----------
+
+# ---------------- Prediction Page ----------------
 elif page == "Prediction":
     st.title("Recipe Predictor")
-    st.markdown("Enter the ingredients you have (separated by commas) to get personalized recipe recommendations.")
+    st.markdown("Enter the ingredients you have to get personalized recipe recommendations.")
     
-    # Option: Use a text input (or you could also use st.multiselect with available ingredients from /ingredients)
-    user_input = st.text_input("Ingredients", placeholder="e.g. milk, cheese, tomato")
+    # Create a multiselect dropdown from available ingredients.
+    if df is not None:
+        available_ings = get_unique_ingredients(df)
+    else:
+        available_ings = []
+    
+    selected_ingredients = st.multiselect("Select Ingredients", options=available_ings)
     
     if st.button("Get Recommendations"):
-        if not user_input:
-            st.error("Please enter at least one ingredient.")
+        if not selected_ingredients:
+            st.error("Please select at least one ingredient.")
         elif recipe_model is None or df is None:
             st.error("Model or data not loaded.")
         else:
             with st.spinner("Fetching recommendations..."):
-                results = predict_recipes(user_input, recipe_model, df)
+                results = predict_recipes(", ".join(selected_ingredients), recipe_model, df)
             if not results:
                 st.warning("No recommendations found.")
             else:
                 st.success("Top recommendations:")
+                # Render each recipe card using columns for a responsive layout.
                 for rec in results:
-                    st.markdown(f"**{rec['recipe_name']}**  \n"
-                                f"Rating: {rec['aver_rate']} ({rec['review_nums']} reviews)  \n"
-                                f"Calories: {rec['calories']} | Fat: {rec['fat']}g | Carbs: {rec['carbohydrates']}g | Protein: {rec['protein']}g  \n"
-                                f"**Available Ingredients:** {', '.join(rec['available_ingredients'])}  \n"
-                                f"**Missing Ingredients:** {', '.join(rec['missing_ingredients'])}  \n"
-                                f"Similarity Score: {rec['similarity']}  \n"
-                                "___")
-                    
-# ---------- About Page ----------
+                    st.markdown(render_recipe_card(rec), unsafe_allow_html=True)
+
+# ---------------- About Page ----------------
 elif page == "About":
     st.title("About the Developer")
-    st.image("static/dev_photo.jpg", width=150)
     st.markdown("""
-    **Hello! I'm [Your Name].**
+    **Developer:** [Nidhi Pokiya]
 
-    I am a passionate developer specializing in machine learning and data science. I built **MyRecipe** from scratch using Python, Flask, and advanced ML libraries. This system processes a dataset of over 48,000 recipes and leverages state-of-the-art techniques (such as TF‑IDF with SVD and embedding-based methods) to deliver personalized recipe recommendations.
-
-    **What I did:**
-    - Data cleaning and processing of 48,000+ recipes.
-    - Designed and implemented a recommendation pipeline with hyperparameter tuning and cross‑validation.
-    - Developed and deployed a production‑ready web application for recipe recommendations.
-
-    I love combining technology and culinary creativity to make food discovery fun and easy. Thanks for checking out MyRecipe!
+    I am a passionate developer specializing in machine learning and data science. I built **MyRecipe** from scratch using Python, Streamlit, and a suite of advanced ML libraries.  
+    This system was developed by processing a dataset of over **48,000 recipes**, and building a robust recommendation pipeline using techniques like TF‑IDF with SVD and embedding-based models. Hyperparameter tuning and cross‑validation ensured a stable, high‑performance model.  
+    I enjoy combining technology with culinary creativity to help users discover new recipes. Thank you for using MyRecipe!
     """)
 
